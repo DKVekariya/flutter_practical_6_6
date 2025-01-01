@@ -2,20 +2,18 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'dart:io';
-
-
+import 'PreviewScreen.dart';
 import 'main.dart';
 
-
 class CameraApp extends StatelessWidget {
-  List<CameraDescription> cameras = [];
-  CameraApp({super.key, required this.cameras});
+  final List<CameraDescription> cameras;
+  const CameraApp({super.key, required this.cameras});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       theme: ThemeData.dark(),
-      home: CameraScreen(cameras: cameras,),
+      home: CameraScreen(cameras: cameras),
     );
   }
 }
@@ -31,13 +29,12 @@ class CameraScreen extends StatefulWidget {
 class _CameraScreenState extends State<CameraScreen> {
   late CameraController _controller;
   late Future<void> _initializeControllerFuture;
-  File? _capturedImage;
+  List<File> _capturedImages = [];
 
   @override
   void initState() {
-
     super.initState();
-    _controller = CameraController( widget.cameras[0], ResolutionPreset.high);
+    _controller = CameraController(widget.cameras[0], ResolutionPreset.high);
     _initializeControllerFuture = _controller.initialize();
   }
 
@@ -52,27 +49,30 @@ class _CameraScreenState extends State<CameraScreen> {
       await _initializeControllerFuture;
       final image = await _controller.takePicture();
       setState(() {
-        _capturedImage = File(image.path);
+        _capturedImages.add(File(image.path));
       });
     } catch (e) {
       print('Error capturing image: $e');
     }
   }
 
-  Future<void> _saveImageToGallery(BuildContext context) async {
-    if (_capturedImage != null) {
-      await PhotoManager.editor.saveImageWithPath(_capturedImage!.path);
+  Future<void> _saveImagesToGallery(BuildContext context) async {
+    if (_capturedImages.isNotEmpty) {
+      for (var image in _capturedImages) {
+        await PhotoManager.editor.saveImageWithPath(image.path);
+      }
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Image saved to gallery!')),
+        const SnackBar(content: Text('Images saved to gallery!')),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No image to save!')),
+        const SnackBar(content: Text('No images to save!')),
       );
     }
   }
 
+  @override
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -81,7 +81,7 @@ class _CameraScreenState extends State<CameraScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.save),
-            onPressed: () {_saveImageToGallery(context); },
+            onPressed: () => _saveImagesToGallery(context),
           ),
         ],
       ),
@@ -89,62 +89,43 @@ class _CameraScreenState extends State<CameraScreen> {
         future: _initializeControllerFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.done) {
-            return Stack(
-              children: [
-                CameraPreview(_controller),
-                if (_capturedImage != null)
-                  Positioned(
-                    top: 16,
-                    left: 16,
-                    child: FloatingActionButton(
-                      child: const Icon(Icons.preview),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                PreviewScreen(image: _capturedImage!),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            );
+            return CameraPreview(_controller);
           } else {
             return const Center(child: CircularProgressIndicator());
           }
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _captureImage,
-        child: const Icon(Icons.camera_alt),
+      floatingActionButton: SizedBox(
+        width: MediaQuery.of(context).size.width,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Preview button on the left, only if there are captured images.
+            if (_capturedImages.isNotEmpty)
+              FloatingActionButton(
+                heroTag: "previewButton",
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          PreviewScreen(images: _capturedImages),
+                    ),
+                  );
+                },
+                child: const Icon(Icons.preview),
+              ),
+            const SizedBox(width: 40), // Spacing between buttons.
+            // Capture button at the center.
+            FloatingActionButton(
+              heroTag: "captureButton",
+              onPressed: () => _captureImage(),
+              child: const Icon(Icons.camera_alt),
+            ),
+          ],
+        ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-    );
-  }
-}
-
-class PreviewScreen extends StatelessWidget {
-  final File image;
-
-  const PreviewScreen({required this.image});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Preview Image'),
-      ),
-      body: Center(
-        child: Image.file(image),
-      ),
-      floatingActionButton: FloatingActionButton(
-        child: const Icon(Icons.arrow_back),
-        onPressed: () {
-          Navigator.pop(context);
-        },
-      ),
     );
   }
 }
